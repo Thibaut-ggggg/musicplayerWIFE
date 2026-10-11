@@ -1,0 +1,224 @@
+import SwiftUI
+import AppKit
+
+enum ShellStyle: String, CaseIterable, Identifiable {
+    case nano1, nano6
+
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .nano1: return "iPod nano (1st generation)"
+        case .nano6: return "iPod nano (6th generation)"
+        }
+    }
+
+    var bodySize: CGSize {
+        switch self {
+        case .nano1: return CGSize(width: NanoMetrics.bodyWidth, height: NanoMetrics.bodyHeight)
+        case .nano6: return CGSize(width: NanoSixthMetrics.bodyWidth, height: NanoSixthMetrics.bodyHeight)
+        }
+    }
+
+    var topInset: CGFloat { self == .nano6 ? NanoSixthMetrics.buttonHeight : 0 }
+    var cornerRadius: CGFloat { self == .nano6 ? NanoSixthMetrics.bodyCorner : NanoMetrics.bodyCorner }
+    var size: CGSize { CGSize(width: bodySize.width, height: bodySize.height + topInset) }
+    var shadowSize: CGSize {
+        CGSize(width: size.width + NanoMetrics.shadowMargin * 2,
+               height: size.height + NanoMetrics.shadowMargin * 2)
+    }
+}
+
+enum ColorMode: String, CaseIterable, Identifiable {
+    case system, white, black, neon
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .system: return "Follow System"
+        case .white: return "White"
+        case .black: return "Black"
+        case .neon: return "Neon Green · Y2K"
+        }
+    }
+}
+
+enum WindowMode: String, CaseIterable, Identifiable {
+    case floating, window
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .floating: return "Floating"
+        case .window: return "Window"
+        }
+    }
+}
+
+final class AppSettings: ObservableObject {
+    @AppStorage("shellStyle") var shellStyleRaw: String = ShellStyle.nano1.rawValue {
+        willSet { objectWillChange.send() }
+    }
+    var shellStyle: ShellStyle {
+        get { ShellStyle(rawValue: shellStyleRaw) ?? .nano1 }
+        set { shellStyleRaw = newValue.rawValue }
+    }
+
+    @AppStorage("colorMode") var colorModeRaw: String = ColorMode.neon.rawValue {
+        willSet { objectWillChange.send() }
+    }
+    var colorMode: ColorMode {
+        get { ColorMode(rawValue: colorModeRaw) ?? .system }
+        set { colorModeRaw = newValue.rawValue }
+    }
+
+    @AppStorage("windowMode") var windowModeRaw: String = WindowMode.floating.rawValue {
+        willSet { objectWillChange.send() }
+    }
+    var windowMode: WindowMode {
+        get { WindowMode(rawValue: windowModeRaw) ?? .floating }
+        set { windowModeRaw = newValue.rawValue }
+    }
+}
+
+/// Resolved palette for the Nano shell. Screen contents stay the same.
+struct NanoTheme {
+    let body: Color
+    let bodyStroke: Color
+    let wheelRingTop: Color
+    let wheelRingBottom: Color
+    let wheelOutline: Color
+    let wheelCenter: Color
+    let wheelCenterStroke: Color
+    let wheelGlyph: Color
+    var isNeon: Bool = false
+
+    static let white = NanoTheme(
+        body: .white,
+        bodyStroke: Color.black.opacity(0.08),
+        wheelRingTop: Color(red: 0.78, green: 0.79, blue: 0.80),
+        wheelRingBottom: Color(red: 0.68, green: 0.69, blue: 0.71),
+        wheelOutline: Color.black.opacity(0.10),
+        wheelCenter: .white,
+        wheelCenterStroke: Color.black.opacity(0.10),
+        wheelGlyph: .white
+    )
+
+    static let black = NanoTheme(
+        body: Color(white: 0.03),
+        bodyStroke: Color.white.opacity(0.06),
+        wheelRingTop: Color(white: 0.22),
+        wheelRingBottom: Color(white: 0.13),
+        wheelOutline: Color.white.opacity(0.06),
+        wheelCenter: Color(white: 0.10),
+        wheelCenterStroke: Color.white.opacity(0.08),
+        wheelGlyph: .white
+    )
+
+    static let neon = NanoTheme(
+        body: NeonPalette.lime,
+        bodyStroke: NeonPalette.gloss.opacity(0.95),
+        wheelRingTop: NeonPalette.pearl,
+        wheelRingBottom: Color(red: 0.83, green: 0.92, blue: 0.76),
+        wheelOutline: NeonPalette.edge.opacity(0.32),
+        wheelCenter: NeonPalette.pink,
+        wheelCenterStroke: Color.white.opacity(0.85),
+        wheelGlyph: NeonPalette.deep,
+        isNeon: true
+    )
+
+    static func resolve(mode: ColorMode, systemIsDark: Bool) -> NanoTheme {
+        switch mode {
+        case .white: return .white
+        case .black: return .black
+        case .neon: return .neon
+        case .system: return systemIsDark ? .black : .white
+        }
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    Picker("Shell", selection: Binding(
+                        get: { settings.shellStyle },
+                        set: { settings.shellStyle = $0 }
+                    )) {
+                        ForEach(ShellStyle.allCases) { shell in
+                            Text(shell.displayName).tag(shell)
+                        }
+                    }
+                    Picker("Color", selection: Binding(
+                        get: { settings.colorMode },
+                        set: { settings.colorMode = $0 }
+                    )) {
+                        ForEach(ColorMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    Picker("Window", selection: Binding(
+                        get: { settings.windowMode },
+                        set: { settings.windowMode = $0 }
+                    )) {
+                        ForEach(WindowMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        if let url = URL(string: "https://github.com/ymolodtsov/macpod") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Label("Get Updates", systemImage: "arrow.down.circle")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .formStyle(.grouped)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Quit NeonPod") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+                .controlSize(.large)
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(16)
+        }
+        .frame(width: 380, height: 340)
+    }
+}
+
+final class SettingsWindowController {
+    private var window: NSWindow?
+    private let settings: AppSettings
+
+    init(settings: AppSettings) { self.settings = settings }
+
+    func show() {
+        if let window {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let content = SettingsView(settings: settings)
+        let hosting = NSHostingController(rootView: content)
+        let w = NSWindow(contentViewController: hosting)
+        w.title = "NeonPod Settings"
+        w.styleMask = [.titled, .closable]
+        w.isReleasedWhenClosed = false
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.window = w
+    }
+}
